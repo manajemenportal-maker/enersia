@@ -175,8 +175,43 @@
             box-shadow: 0 8px 18px rgba(15,23,42,.12);
         }
         @media print {
-            .media-action-bar, .unit-modal-backdrop, .modal-upload-label { display: none !important; }
+            .media-action-bar, .unit-modal-backdrop, .modal-upload-label, .admin-lock-btn, .admin-mode-badge { display: none !important; }
             .product-media-frame { cursor: default !important; }
+        }
+
+
+        /* Mode admin: upload hanya muncul setelah admin masuk */
+        body:not(.admin-mode) .admin-only { display: none !important; }
+        body.admin-mode .visitor-only { display: none !important; }
+        .admin-lock-btn {
+            position: fixed;
+            left: 1rem;
+            bottom: 1rem;
+            z-index: 95;
+            border-radius: 999px;
+            background: #166534;
+            color: #fff;
+            padding: .75rem 1rem;
+            font-size: .78rem;
+            font-weight: 800;
+            box-shadow: 0 14px 35px rgba(15,23,42,.22);
+            display: inline-flex;
+            align-items: center;
+            gap: .45rem;
+        }
+        .admin-lock-btn:hover { background: #14532d; }
+        .admin-mode-badge {
+            position: fixed;
+            left: 1rem;
+            bottom: 4.25rem;
+            z-index: 95;
+            border-radius: 1rem;
+            background: rgba(234,179,8,.96);
+            color: #1f2937;
+            padding: .55rem .8rem;
+            font-size: .72rem;
+            font-weight: 800;
+            box-shadow: 0 10px 24px rgba(15,23,42,.16);
         }
 
         /* Pengaturan Khusus Cetak (PDF) */
@@ -199,7 +234,7 @@
                 <div class="flex-shrink-0 flex items-center gap-3">
                     
                     <!-- Fitur Upload Logo -->
-                    <div class="relative group" id="logo-container" title="Klik untuk upload logo perusahaan">
+                    <div class="relative group admin-only" id="logo-container" title="Klik untuk upload logo perusahaan">
                         <input type="file" id="logo-upload" class="hidden" accept="image/*">
                         <label for="logo-upload" class="cursor-pointer flex items-center justify-center w-11 h-11 bg-primary rounded-full text-white font-bold overflow-hidden shadow-sm border-2 border-transparent hover:border-secondary transition relative">
                             <img id="logo-preview" src="" alt="Logo Perusahaan" class="hidden w-full h-full object-cover">
@@ -616,7 +651,7 @@
                 <div>
                     <p class="text-xs font-bold tracking-widest uppercase text-primary mb-1">Media Unit Produk</p>
                     <h3 id="unit-modal-title" class="text-xl sm:text-2xl font-bold text-dark">Upload Media Unit</h3>
-                    <p class="text-sm text-gray-500 mt-1">Siapkan 3 foto tambahan dan 1 video untuk setiap unit. Klik kotak media untuk memilih file.</p>
+                    <p class="text-sm text-gray-500 mt-1"><span class="admin-only">Siapkan 3 foto tambahan dan 1 video untuk setiap unit. Klik kotak media untuk memilih file.</span><span class="visitor-only">Galeri unit produk. Upload media hanya untuk admin.</span></p>
                 </div>
                 <button id="unit-modal-close" class="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center flex-shrink-0" type="button">
                     <i class="fa-solid fa-xmark text-lg"></i>
@@ -628,17 +663,26 @@
                     <h4 class="text-sm font-bold text-dark mb-3 flex items-center gap-2"><i class="fa-solid fa-video text-primary"></i> Video Unit</h4>
                     <div class="unit-modal-video" id="unit-video-box">
                         <input type="file" id="unit-video-input" class="hidden" accept="video/*">
-                        <label for="unit-video-input" class="modal-upload-label">
+                        <label for="unit-video-input" class="modal-upload-label admin-only">
                             <i class="fa-solid fa-cloud-arrow-up text-2xl text-primary"></i>
                             <span>Upload video unit / demo mesin</span>
                         </label>
                     </div>
                 </div>
                 <div class="mt-6 rounded-2xl bg-green-50 border border-green-100 p-4 text-sm text-green-900">
-                    <b>Status Firebase:</b> foto utama, 3 foto tambahan, dan video akan diupload ke Firebase Storage. URL media disimpan otomatis ke Firestore agar tetap tampil saat halaman dibuka ulang.
+                    <b>Status Firebase:</b> pengunjung hanya bisa melihat media. Upload foto utama, 3 foto tambahan, dan video hanya aktif setelah login admin Firebase Auth.
                 </div>
             </div>
         </div>
+    </div>
+
+
+    <!-- Kontrol Admin Upload -->
+    <button id="admin-login-btn" class="admin-lock-btn print:hidden" type="button">
+        <i class="fa-solid fa-lock"></i> <span id="admin-login-text">Admin Upload</span>
+    </button>
+    <div id="admin-mode-badge" class="admin-mode-badge hidden print:hidden">
+        <i class="fa-solid fa-shield-halved"></i> Mode Admin Aktif
     </div>
 
 
@@ -661,24 +705,28 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-        // Config Firebase. Saya isi dari config PT KSA/KaliERP yang pernah dipakai.
-        // Kalau web Enersia memakai project Firebase lain, cukup ganti isi firebaseConfig di bawah ini.
+        // Config Firebase project: pertanian-e129a
+        // Format import memakai CDN Firebase agar langsung jalan di GitHub Pages / HTML biasa.
         const firebaseConfig = {
-            apiKey: "AIzaSyDfTbFVolL7nfJbgoZCcg9CCUGgyky073Q",
-            authDomain: "kalierp-d4905.firebaseapp.com",
-            projectId: "kalierp-d4905",
-            storageBucket: "kalierp-d4905.firebasestorage.app",
-            messagingSenderId: "549448963486",
-            appId: "1:549448963486:web:b2f3690cd509b87a72f28f",
-            measurementId: "G-9WD9"
+            apiKey: "AIzaSyCYHE0SwCp1oQUzuEY30rmsPSt4RHDkFtY",
+            authDomain: "pertanian-e129a.firebaseapp.com",
+            projectId: "pertanian-e129a",
+            storageBucket: "pertanian-e129a.firebasestorage.app",
+            messagingSenderId: "346297194132",
+            appId: "1:346297194132:web:14ad7f6b3698f5152d8681",
+            measurementId: "G-T611BY2RR6"
         };
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const storage = getStorage(app);
+        const auth = getAuth(app);
         const FIRESTORE_COLLECTION = "enersiaProductMedia";
         const STORAGE_ROOT = "enersia-water-pump/products";
+        const ADMIN_EMAIL = "kalimayasuryaalam@gmail.com"; // Email admin yang diizinkan upload lewat Firebase Rules.
+        let isAdminMode = false;
 
         function showUploadStatus(title, message, isError = false) {
             const box = document.getElementById("firebase-upload-status");
@@ -696,6 +744,52 @@
                 setTimeout(() => box.classList.add("hidden"), 2600);
             }
         }
+
+
+        function applyAdminModeUI() {
+            document.body.classList.toggle("admin-mode", isAdminMode);
+            const btnText = document.getElementById("admin-login-text");
+            const badge = document.getElementById("admin-mode-badge");
+            if (btnText) btnText.textContent = isAdminMode ? "Keluar Admin" : "Admin Upload";
+            if (badge) badge.classList.toggle("hidden", !isAdminMode);
+        }
+
+        function requireAdminUpload() {
+            if (isAdminMode && auth.currentUser) return true;
+            showUploadStatus("Akses admin diperlukan", "Upload foto/video hanya bisa dilakukan setelah login Firebase Auth sebagai admin.", true);
+            return false;
+        }
+
+        async function toggleAdminMode() {
+            if (auth.currentUser) {
+                await signOut(auth);
+                showUploadStatus("Mode admin keluar", "Pengunjung kembali hanya bisa melihat media.");
+                return;
+            }
+            const email = window.prompt("Email admin Firebase:", ADMIN_EMAIL);
+            if (!email) return;
+            const password = window.prompt("Password admin Firebase:");
+            if (!password) return;
+            try {
+                showUploadStatus("Login admin", "Memeriksa akun admin Firebase...");
+                const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+                const userEmail = (cred.user.email || "").toLowerCase();
+                if (userEmail !== ADMIN_EMAIL.toLowerCase()) {
+                    await signOut(auth);
+                    showUploadStatus("Email bukan admin", "Akun ini tidak diizinkan upload media.", true);
+                    return;
+                }
+                showUploadStatus("Mode admin aktif", "Upload foto utama, 3 foto tambahan, dan video sudah dibuka.");
+            } catch (error) {
+                console.error("Login admin gagal:", error);
+                showUploadStatus("Login admin gagal", "Aktifkan Email/Password di Firebase Auth, buat user admin, lalu cek email/password.", true);
+            }
+        }
+
+        onAuthStateChanged(auth, (user) => {
+            isAdminMode = Boolean(user && (user.email || "").toLowerCase() === ADMIN_EMAIL.toLowerCase());
+            applyAdminModeUI();
+        });
 
         function sanitizeFilename(name) {
             return (name || "media").toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -733,7 +827,7 @@
                 renderMainUnitImage(frame, store.main);
             } catch (error) {
                 console.error("Gagal mengambil media Firebase:", error);
-                showUploadStatus("Firebase belum bisa dibaca", "Cek config Firebase atau rules Firestore/Storage.", true);
+                showUploadStatus("Firebase belum bisa dibaca", `${error.code || "error"}: cek config Firebase atau rules Firestore/Storage.`, true);
             }
         }
 
@@ -772,6 +866,7 @@
         const logoOverlay = document.getElementById('logo-overlay');
 
         logoUpload.addEventListener('change', function(event) {
+            if (!requireAdminUpload()) { event.target.value = ''; return; }
             const file = event.target.files[0];
             if (file) {
                 const reader = new FileReader();
@@ -811,6 +906,7 @@
         }
 
         async function handleMainImageUpload(unitKey, unitTitle, frame, file) {
+            if (!requireAdminUpload()) return;
             const store = getUnitStore(unitKey);
             const localPreview = readFileAsObjectUrl(file);
             store.main = localPreview;
@@ -824,11 +920,12 @@
                 showUploadStatus("Foto utama tersimpan", `${unitTitle} sudah tersimpan permanen.`);
             } catch (error) {
                 console.error("Upload foto utama gagal:", error);
-                showUploadStatus("Upload gagal", "Cek koneksi, Firebase config, atau rules Storage/Firestore.", true);
+                showUploadStatus("Upload gagal", `${error.code || "error"}: cek login admin, config, atau rules Storage/Firestore.`, true);
             }
         }
 
         async function handleExtraPhotoUpload(index, file) {
+            if (!requireAdminUpload()) return;
             if (!activeUnitKey) return;
             const unitKey = activeUnitKey;
             const unitTitle = document.getElementById('unit-modal-title').textContent || unitKey;
@@ -844,11 +941,12 @@
                 showUploadStatus("Foto tambahan tersimpan", `${unitTitle} sudah tersimpan permanen.`);
             } catch (error) {
                 console.error("Upload foto tambahan gagal:", error);
-                showUploadStatus("Upload gagal", "Cek koneksi, Firebase config, atau rules Storage/Firestore.", true);
+                showUploadStatus("Upload gagal", `${error.code || "error"}: cek login admin, config, atau rules Storage/Firestore.`, true);
             }
         }
 
         async function handleUnitVideoUpload(file) {
+            if (!requireAdminUpload()) return;
             if (!activeUnitKey) return;
             const unitKey = activeUnitKey;
             const unitTitle = document.getElementById('unit-modal-title').textContent || unitKey;
@@ -864,7 +962,7 @@
                 showUploadStatus("Video tersimpan", `${unitTitle} sudah tersimpan permanen.`);
             } catch (error) {
                 console.error("Upload video gagal:", error);
-                showUploadStatus("Upload gagal", "Cek koneksi, Firebase config, atau rules Storage/Firestore.", true);
+                showUploadStatus("Upload gagal", `${error.code || "error"}: cek login admin, config, atau rules Storage/Firestore.`, true);
             }
         }
 
@@ -889,12 +987,13 @@
                             <div class="upload-icon"><i class="fa-solid fa-image"></i></div>
                             <div>
                                 <div class="font-bold text-gray-700">Frame Foto Unit</div>
-                                <div class="text-xs">Klik untuk buka detail media</div>
+                                <div class="text-xs visitor-only">Klik untuk melihat detail media</div>
+                                <div class="text-xs admin-only">Klik detail / upload media</div>
                             </div>
                         </div>
                     </div>
                     ${badge}
-                    <div class="media-action-bar">
+                    <div class="media-action-bar admin-only">
                         <label for="main-upload-${unitKey}" class="media-action-btn" onclick="event.stopPropagation()"><i class="fa-solid fa-upload"></i> Foto Utama</label>
                         <button type="button" class="media-action-btn open-media-btn"><i class="fa-solid fa-images"></i> 3 Foto + Video</button>
                     </div>
@@ -923,7 +1022,7 @@
                 preview.innerHTML = `<img src="${url}" alt="Foto utama unit" class="w-full h-full object-cover">`;
                 frame.classList.add('has-image');
             } else {
-                preview.innerHTML = `<div class="upload-placeholder"><div class="upload-icon"><i class="fa-solid fa-image"></i></div><div><div class="font-bold text-gray-700">Frame Foto Unit</div><div class="text-xs">Klik untuk buka detail media</div></div></div>`;
+                preview.innerHTML = `<div class="upload-placeholder"><div class="upload-icon"><i class="fa-solid fa-image"></i></div><div><div class="font-bold text-gray-700">Frame Foto Unit</div><div class="text-xs visitor-only">Klik untuk melihat detail media</div><div class="text-xs admin-only">Klik detail / upload media</div></div></div>`;
                 frame.classList.remove('has-image');
             }
         }
@@ -953,9 +1052,9 @@
                 wrap.innerHTML = `
                     <h4 class="text-sm font-bold text-dark mb-2 flex items-center gap-2"><i class="fa-solid fa-camera text-primary"></i> Foto Tambahan ${i + 1}</h4>
                     <div class="unit-modal-thumb ${store.photos[i] ? 'has-file' : ''}" id="unit-photo-box-${i}">
-                        ${store.photos[i] ? `<img src="${store.photos[i]}" alt="Foto tambahan ${i + 1}">` : ''}
+                        ${store.photos[i] ? `<img src="${store.photos[i]}" alt="Foto tambahan ${i + 1}">` : '<div class="upload-placeholder visitor-only"><div class="upload-icon"><i class="fa-solid fa-image"></i></div><div class="font-bold text-gray-600">Foto belum tersedia</div></div>'}
                         <input type="file" id="unit-photo-input-${i}" class="hidden" accept="image/*">
-                        <label for="unit-photo-input-${i}" class="modal-upload-label">
+                        <label for="unit-photo-input-${i}" class="modal-upload-label admin-only">
                             <i class="fa-solid fa-cloud-arrow-up ${store.photos[i] ? '' : 'text-2xl text-primary'}"></i>
                             <span>${store.photos[i] ? 'Ganti foto' : 'Upload foto unit'}</span>
                         </label>
@@ -976,9 +1075,9 @@
             const store = getUnitStore(activeUnitKey);
             box.classList.toggle('has-file', Boolean(store.video));
             box.innerHTML = `
-                ${store.video ? `<video src="${store.video}" controls class="w-full h-full object-cover"></video>` : ''}
+                ${store.video ? `<video src="${store.video}" controls class="w-full h-full object-cover"></video>` : '<div class="upload-placeholder visitor-only"><div class="upload-icon"><i class="fa-solid fa-video"></i></div><div class="font-bold text-gray-600">Video belum tersedia</div></div>'}
                 <input type="file" id="unit-video-input" class="hidden" accept="video/*">
-                <label for="unit-video-input" class="modal-upload-label">
+                <label for="unit-video-input" class="modal-upload-label admin-only">
                     <i class="fa-solid fa-cloud-arrow-up ${store.video ? '' : 'text-2xl text-primary'}"></i>
                     <span>${store.video ? 'Ganti video' : 'Upload video unit / demo mesin'}</span>
                 </label>
@@ -991,6 +1090,8 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            applyAdminModeUI();
+            document.getElementById('admin-login-btn')?.addEventListener('click', toggleAdminMode);
             enhanceProductMediaFrames();
             document.getElementById('unit-modal-close').addEventListener('click', closeUnitMediaModal);
             document.getElementById('unit-media-modal').addEventListener('click', (event) => {
